@@ -1,5 +1,11 @@
 # C2C-Digital-Evidence-Acquisition
 
+## Idea
+You got a server running in the cloud.
+You want to image it for forensic.
+Just boot in single user, slice the partitions and send them to a remote cloud storage (S3) service.
+End-to-end encryption and compression is in use.
+
 ## How to
 
 ### Extract data (split)
