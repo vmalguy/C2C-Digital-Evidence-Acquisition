@@ -21,14 +21,16 @@ SNAME=myremote
 SWIFT=${SNAME}:${CONTAINER}
 
 
-#provide URL key
-URLKEY=`swift stat|grep Temp-Url-Key|cut -d" " -f13`
+#provide (first) URL key
+URLKEY=`swift stat|grep Temp-Url-Key| head -n 1| awk '{print $NF}'`
 #provide OS_STORAGE_URL
 `swift  auth`
+URI=`echo $OS_STORAGE_URL| cut -d"/" -f 4-`
+DOMAIN=`echo $OS_STORAGE_URL| cut -d"/" -f -3`
 
 for file in `swift list $1`
   do
-    URL=`swift tempurl GET 604800 ${OS_STORAGE_URL}/$1/$file  ${URLKEY}`
-    echo wget --content-disposition -nc \"${URL}\"
+    URL=`swift tempurl GET 604800 /${URI}/$1/$file  ${URLKEY}`
+    echo wget --content-disposition -nc \"${DOMAIN}${URL}\"
   done
 
