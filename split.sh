@@ -1,21 +1,27 @@
 #!/bin/bash
 
+
+
 echo -n Dependancy verification :
-command -v rclone >/dev/null 2>&1 || ( apt install curl && curl -s https://rclone.org/install.sh | sudo bash )
-command -v swift >/dev/null 2>&1 || ( apt install python-swiftclient )
-command -v dcfldd >/dev/null 2>&1 || ( apt install dcfldd )
+command -v apt update >/dev/null 2>&1
+command -v rclone >/dev/null 2>&1 ||  (apt -y install rclone ) || ( apt -y install curl && curl -s https://rclone.org/install.sh | sudo bash )
+command -v rclone >/dev/null 2>&1 || (echo "automated rclone installation failed, see https://rclone.org/install/ for manual install" && exit 1)
+command -v swift >/dev/null 2>&1 || ( apt -y --force-yes install python-swiftclient ; apt -y --force-yes install python3-swiftclient)
+command -v dcfldd >/dev/null 2>&1 || ( apt -y install dcfldd )
 echo Dependancy meet!
 
+
+
 if ! test -n "$STY";
- then 
+ then
    echo "This is NOT a screen session."
-   echo "Use screen -S split to launch this script, exiting."  
+   echo "Use screen -S split to launch this script, exiting."
    exit 1
 fi
 
 if [ -z "$1" ]
   then
-    echo "No argument supplied, need to be a partition, exemple : /dev/sdba1"
+    echo "No argument supplied, need to be a partition, exemple : /dev/sda1"
     fdisk -l|grep "dev"
     exit 1
 fi
@@ -26,7 +32,8 @@ echo Output files will be : $OUTPUT
 
 
 #create a new fresh SWIFT container
-CONTAINER=$OUTPUT_`date +%s`
+IPADDR=`hostname -I| tr " " "_"`
+CONTAINER=${IPADDR}-${OUTPUT}-`date +%s`
 swift post $CONTAINER
 if [ $? -eq 0 ]; then
     echo container is $CONTAINER
@@ -35,7 +42,7 @@ else
     exit 1
 fi
 
-# Setup rclone base on openstack configuration 
+# Setup rclone base on openstack configuration
 export RCLONE_CONFIG_MYREMOTE_TYPE=swift
 export RCLONE_CONFIG_MYREMOTE_ENV_AUTH=true
 mkdir -p ~/.config/rclone/ && touch ~/.config/rclone/rclone.conf
@@ -45,11 +52,13 @@ SWIFT=${SNAME}:${CONTAINER}
 echo -n "starting aquisition at " > $OUTPUT.log
 date "+%Y/%m/%d %H:%M:%S" >> $OUTPUT.log
 
+fdisk -l|grep "dev" >> $OUTPUT.log
+
 ENCKEY=`openssl rand -base64 16 | colrm 17`
 echo "encryption key is "$ENCKEY
 echo "transmit it to anyone who need to decypher the data"
 
-#How big we want the chunks to be in bytes. 
+#How big we want the chunks to be in bytes.
 # Note that compression will reduce size but encryption will add overhead
 # 5000 * 1024 * 1024 = 5G maximum for swift
 CHUNKSIZE=$(( 5000 * 1024 * 1024 ))
@@ -88,12 +97,12 @@ echo "Creating file "$NEWFILE" starting after block "$SKIP"" >> $OUTPUT.log
 echo "Creating file "$NEWFILE" starting after block "$SKIP""
 
 #this line is the most time consuming (dd + gzip)
-dcfldd if="$FILE"  bs="$BS" count="$CHUNKSIZE" skip=$SKIP hash=sha256 sha256log=${NEWFILE}.sha256 conv=noerror,sync errlog=${NEWFILE}.errlog | gzip -4 > ${NEWFILE}.gz 
+dcfldd if="$FILE"  bs="$BS" count="$CHUNKSIZE" skip=$SKIP hash=sha256 sha256log=${NEWFILE}.sha256 conv=noerror,sync errlog=${NEWFILE}.errlog | gzip -4 > ${NEWFILE}.gz
 
-gpg --yes --batch --passphrase=${ENCKEY} --output ${NEWFILE}.gz.aes --symmetric --cipher-algo AES256  ${NEWFILE}.gz 
+gpg --yes --batch --passphrase=${ENCKEY} --output ${NEWFILE}.gz.aes --symmetric --cipher-algo AES256  ${NEWFILE}.gz
 rm ${NEWFILE}.gz &
 
-rclone copy --progress ${NEWFILE}.gz.aes $SWIFT 
+rclone copy --progress ${NEWFILE}.gz.aes $SWIFT
 
 echo -n ${NEWFILE}  >> $OUTPUT.log
 cat ${NEWFILE}.sha256 >> $OUTPUT.log && rm ${NEWFILE}.sha256
@@ -106,6 +115,10 @@ rm ${NEWFILE}.gz.aes &
 SKIP=$(( $SKIP + $CHUNKSIZE ))
 done
 
+#BLKID at the end cause it cause crashes !!
+echo BLK information : >> $OUTPUT.log
+lsblk -a >> $OUTPUT.log
+blkid $FILE >> $OUTPUT.log
 date "+%Y/%m/%d %H:%M:%S" >> $OUTPUT.log
 echo "Finished" >> $OUTPUT.log
 rclone copy $OUTPUT.log $SWIFT
@@ -113,4 +126,5 @@ rclone copy $OUTPUT.log $SWIFT
 echo "encryption key is "$ENCKEY
 echo "transmit it to anyone who want to decypher the data"
 echo "Finished"
+date
 
