@@ -3,7 +3,7 @@
 # Issue Swift temporary download URLs for an acquisition container.
 #
 # Main use: build the single self-contained retrieval script that is handed to
-# the remote analyst (law enforcement) for one disk.
+# the remote analyst for one disk.
 #
 #   ./gen_temp_url.sh -s retrieve-sda1.sh -e 604800 <container>
 #
@@ -685,7 +685,7 @@ echo
 if grep -qF "$REBUILT" "$LOG"; then
     info "==============================================================="
     info " INTEGRITY OK"
-    info " $OUT matches the hash recorded when the evidence was seized."
+    info " $OUT matches the hash recorded at acquisition time."
     info " Chain of custody: $LOG"
     info "==============================================================="
 else
@@ -694,9 +694,9 @@ else
     info " Hash recorded at acquisition:"
     grep -E 'whole-device sha1|^[0-9a-f]{40} +/dev/' "$LOG" || info "  (none recorded)"
     info ""
-    info " A mismatch is expected ONLY if the seized device size was not a"
+    info " A mismatch is expected ONLY if the source device size was not a"
     info " multiple of 4096 bytes, in which case the last block is zero-padded."
-    info " Any other difference means the image differs from the seized device."
+    info " Any other difference means the image differs from the source device."
     info "==============================================================="
     exit 1
 fi

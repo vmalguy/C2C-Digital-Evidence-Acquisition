@@ -232,7 +232,7 @@ Install them by hand, then rerun. rclone: https://rclone.org/install/"
 # gzip is single-threaded and, on real (incompressible) data, the slowest stage
 # of the whole acquisition -- 67 MB/s measured through the dcfldd pipeline on a
 # 6-core EPYC, against 241 MB/s with pigz for the same output size. On a 894 GiB
-# disk that is hours of extra downtime for the customer whose server is offline.
+# disk that is hours of extra downtime on a server that is offline meanwhile.
 #
 # pigz output is an ordinary gzip stream: `gunzip` reads it unchanged, so
 # unsplit.sh and the analyst's retrieval script need no change. Verified by
@@ -514,7 +514,7 @@ Lower the chunk size, e.g.  export CHUNKSIZE_BYTES=\$((512 * 1024 * 1024))"
 }
 
 # The staging area holds a gzip and a gpg copy of the current chunk at once. On a
-# rescue system that area is RAM, and the machine being seized may have far less
+# rescue system that area is RAM, and the machine being acquired may have far less
 # of it than this one. Shrink the chunk to fit instead of refusing to start --
 # unless the operator pinned CHUNKSIZE_BYTES, in which case their value stands.
 #
@@ -577,7 +577,7 @@ $( [ "$PARALLEL_DEVICES" -gt 1 ] && printf 'Lower --parallel, or w' || printf 'W
 #
 # It used to be `sha1sum "$FILE" &` -- a SECOND complete read of the device,
 # racing the acquisition for bandwidth. On a 894 GiB disk that is hours of extra
-# downtime for a customer whose server is offline.
+# downtime on a server that is offline meanwhile.
 #
 # Instead the plaintext already flowing out of dcfldd is teed into one long-lived
 # sha1sum. sha1 runs at ~2 GB/s with SHA-NI while the pipeline caps at 241 MB/s,
@@ -599,7 +599,7 @@ start_device_hash() {
 
     # A finalisation-only resume already has it: the run that read the device
     # wrote it to the log. Re-reading 894 GiB to recompute a hash that is
-    # sitting three lines up is pure downtime on a seized machine.
+    # sitting three lines up is pure downtime on a machine that is offline.
     if [ "$FINALISE_ONLY" -eq 1 ] \
        && grep -qa 'whole-device sha1:' "$LOGFILE" 2>/dev/null; then
         DEVSHA_MODE="already"
@@ -1230,7 +1230,7 @@ manifest_set() {
 # --------------------------------------------------------------- device survey
 
 # Unmounted partitions and md arrays, for --all. Deliberately printed and
-# confirmed rather than acted on: selecting devices to seize without showing
+# confirmed rather than acted on: selecting devices to acquire without showing
 # them first would be dangerous.
 enumerate_all_devices() {
     local name type mnt dev staging out
@@ -1281,7 +1281,7 @@ human_size() {
 
 # What --all would take, printed and nothing else. Reads no data and writes
 # nothing, and deliberately skips the dependency, Swift and screen pre-flight:
-# deciding what to seize should work on a bare rescue before anything is
+# deciding what to acquire should work on a bare rescue before anything is
 # installed.
 show_devices() {
     local dev size type fstype label members m disk psum unalloc n
@@ -1385,7 +1385,7 @@ EOF
 
 # Acquire several devices at once. Worth it because separate physical disks do
 # not contend: on the reference server, imaging both NVMe drives concurrently
-# halves the customer's downtime, and every device already has its own
+# halves the total downtime, and every device already has its own
 # container, key, log and state file, so there is no shared state to corrupt --
 # unlike parallelising uploads within one device.
 parallel_acquire() {
@@ -1955,7 +1955,7 @@ To align them:
     echo "   ./gen_temp_url.sh $CONTAINER"
     echo "=============================================================="
 
-    webex_notify "_${CONTAINER}:_ This disk is **finished** ($TOTAL_PART parts). Data will be automatically deleted on $(human_date "$FINAL_EXPIRY"). Wait for all disks to be finished and release this server to the customer."
+    webex_notify "_${CONTAINER}:_ This disk is **finished** ($TOTAL_PART parts). Data will be automatically deleted on $(human_date "$FINAL_EXPIRY"). Wait for all disks to be finished before releasing this server."
 
     # Non-zero when some object kept the provisional date: the acquisition is
     # complete and verified, but something was left for the operator to do.

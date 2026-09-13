@@ -6,6 +6,26 @@ object storage, with an end-to-end verifiable chain of custody.
 Developed and used at OVHcloud US; nothing in it is provider-specific beyond
 Swift itself.
 
+## What it is for
+
+Capturing an exact, verifiable copy of a disk before the machine it lives in is
+rebuilt, decommissioned, or lost: incident response on a compromised server, a
+failing disk that has to be captured before it dies, or any case where the copy
+must outlive the hardware and still be provably identical to the original.
+
+The design is deliberately restrictive about what it leaves behind:
+
+- every chunk is encrypted with AES-256 before it leaves the machine, with a key
+  the tool never writes down anywhere;
+- every object carries an expiration, so nothing is stored indefinitely — and if
+  that expiration cannot be set, the acquisition stops rather than proceed
+  without one;
+- the download links handed out are time-limited, and whoever holds them still
+  cannot read the data without the key, which travels separately.
+
+Whoever holds the links cannot read the data, and whoever holds the data cannot
+keep it forever. Both properties are enforced by the tool, not by policy.
+
 ## What it does
 
 `split.sh` reads a block device with `dcfldd`, cuts it into chunks below the 5 GiB
@@ -27,9 +47,9 @@ the definitive value:
 
 > **expiration = preservation completion date + 1 year**
 
-Override the window with `RETENTION_SECONDS` (seconds) for a longer legal hold.
-If the expiration cannot be set and read back on an object, the acquisition
-stops rather than storing customer data indefinitely.
+Override the window with `RETENTION_SECONDS` (seconds) when the data must be
+kept longer. If the expiration cannot be set and read back on an object, the
+acquisition stops rather than storing acquired data indefinitely.
 
 The container itself does not expire (Swift only expires objects); an empty
 container remains after the purge, at no cost.
@@ -38,14 +58,14 @@ container remains after the purge, at no cost.
 
 | Where | Script | Environment |
 |---|---|---|
-| The **seized server**, booted into OVH rescue | `split.sh` | RAM disk, wiped at every boot |
+| The **source server**, booted into rescue | `split.sh` | RAM disk, wiped at every boot |
 | Your **acquisition server** | `gen_temp_url.sh` | Ordinary persistent Debian |
 | The **analyst's** machine | the generated `retrieve-*.sh` | Whatever they have |
 
 Only `split.sh` ever runs in rescue. Everything below about RAM disks, wiped
 packages and staging directories applies to it alone.
 
-## Acquisition — on the seized server
+## Acquisition — on the source server
 
 Acquisitions start by **rebooting the target server into OVH rescue**. The disks
 are then never mounted, so nothing on them is modified, and everything runs from
@@ -83,8 +103,8 @@ On the reference server it makes the case for whole-disk imaging in one line:
 
 ### Downtime is the constraint, and it is a performance problem
 
-The seized server is offline for the whole acquisition, so the customer's service
-is down for the whole acquisition. That pressure should not be relieved by
+The source server is offline for the whole acquisition, so whatever it serves is
+down for the whole acquisition. That pressure should not be relieved by
 shrinking the evidence — it is cheaper to make the acquisition fast.
 
 Two things dominate, and neither is the disk:
@@ -148,7 +168,7 @@ The message includes the command to align them.
 
 ### Several devices in one pass
 
-A seized server has more than one partition. Devices are acquired **in sequence**,
+A server usually has more than one partition. Devices are acquired **in sequence**,
 each with its own container, its own key and its own `.state` — the handover stays
 one script per disk.
 
@@ -201,7 +221,7 @@ different members within one acquisition. The copy is internally consistent and
 rebuilds correctly, but it is a faithful copy of no physical disk.
 
 `split.sh` samples both members and warns, loudly when it finds a difference, but
-sampling cannot prove agreement. Before a real seizure:
+sampling cannot prove agreement. Before a real acquisition:
 
 ```bash
 mdadm --action=check /dev/md1           # READS both members and counts
@@ -262,8 +282,8 @@ than are actually stored, the acquisition resumes from what is really there.
 If the resume finds **every** part already stored and confirmed, only the
 finalisation is replayed: the key is not asked for (nothing will be encrypted)
 and the device is not re-read, because the whole-device hash is already in the
-log. That matters on a seized machine — re-reading 894 GiB to recompute a hash
-sitting three lines up is pure downtime. This is the path to use when a run
+log. That matters when the machine is offline for the duration — re-reading
+894 GiB to recompute a hash sitting three lines up is pure downtime. This is the path to use when a run
 completed the upload but died during finalisation.
 
 ### A disk with bad sectors
@@ -277,12 +297,12 @@ bytes as it was long, at the offset it occupied, so every later byte stays where
 it belongs. The `Input/output error` lines land in the `<device>.log` next to the
 part that hit them, which is what lets an analyst tell *"these 4 KiB were
 unreadable"* from *"these 4 KiB were zero on the disk"* — a distinction that is
-lost forever if it is not recorded at seizure.
+lost forever if it is not recorded at acquisition time.
 
 The whole-device sha1 in the log is the hash of **what was acquired**, zero-fill
 included — not of the disk, which by definition cannot be read. It is still the
 right anchor: it is what `unsplit.sh` checks the rebuilt image against, so it
-proves the image the analyst holds is the image that left the seized machine.
+proves the image the analyst holds is the image that left the source machine.
 
 Two guards matter here and both are worth knowing about:
 
@@ -406,7 +426,7 @@ Run from your own acquisition server, not from the rescue box: it only needs the
 openrc for the project and a one-off
 `apt-get install -y python3-swiftclient python3-keystoneclient curl`.
 
-The normal case: you acquire, someone else (law enforcement) analyses. Generate
+The normal case: you acquire, someone else analyses. Generate
 **one self-contained script per disk** and send that single file.
 
 ```bash
@@ -438,7 +458,7 @@ It refuses to start once the links have expired, fetches the chain of custody
 first and checks it against a sha256 anchored in the script itself, downloads
 the parts in parallel, resumes an interrupted transfer (intact parts are kept),
 verifies every part, then asks for the key and rebuilds — verifying each chunk
-against the hash recorded at seizure, and the whole image at the end.
+against the hash recorded at acquisition time, and the whole image at the end.
 
 **Room needed on the analyst's side:** the compressed parts plus the full-size
 image, and the script prints both figures before it starts. The parts are
@@ -470,7 +490,7 @@ the transfer.
 
 | Script | Use |
 |---|---|
-| `split.sh` | Acquisition, on the seized server |
+| `split.sh` | Acquisition, on the source server |
 | `gen_temp_url.sh` | Builds the retrieval script handed to the analyst |
 | `unsplit.sh` | Rebuilds an image from downloaded parts |
 
@@ -518,7 +538,7 @@ line rather than failing halfway.
 
 ## Test on the rescue image you will actually boot
 
-Run acquisitions, and any testing, on **the same rescue image a real seizure
+Run acquisitions, and any testing, on **the same rescue image a real acquisition
 boots**. Ours is Debian 10, and that matters more than it sounds:
 
 - its **dcfldd 1.3.4-1 segfaults whenever `errlog=` is passed** — even on a
